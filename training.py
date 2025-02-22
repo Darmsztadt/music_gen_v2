@@ -175,77 +175,40 @@ def load_midi_from_folder(folder_path):
 
     return all_tracks
 
-def create_training_data(files, sequence_length=32):
+from tensorflow.keras.utils import to_categorical
+
+def create_training_data(files, sequence_length=32, num_notes=128):
     sequences = []
     labels = []
 
     for file in files:
         for track in file.values():
             notes = []
-            durations = []  # To store duration of each note
-            velocities = []  # To store velocity for each note
 
-            current_time = 0  # Initial time reference for delta_time
-            active_notes = {}  # Store active notes (for calculating durations)
-
-            # Collect notes, velocities, and durations
+            # Collect only note pitches
             for msg in track:
-                if msg.type == 'note_on':
-                    note = msg.note
-                    velocity = msg.velocity
-                    delta_time = msg.time
+                if msg.type == 'note_on' and msg.velocity > 0:  # Ignore note_off events
+                    notes.append(msg.note)
 
-                    # Store the time when the note starts
-                    if note not in active_notes:
-                        active_notes[note] = (current_time, velocity)
-
-                    current_time += delta_time
-
-                elif msg.type == 'note_off':
-                    note = msg.note
-                    delta_time = msg.time
-
-                    # If note is already active, calculate its duration and add to lists
-                    if note in active_notes:
-                        note_start_time, velocity = active_notes.pop(note)
-                        duration = current_time - note_start_time
-                        notes.append(note)
-                        durations.append(duration)
-                        velocities.append(velocity)
-
-                    current_time += delta_time  # Update the reference time for delta_time
-
-            # Handle the case where notes are still active at the end of the track
-            for note, (start_time, velocity) in active_notes.items():
-                # These notes did not have 'note_off', you can decide what to do here
-                duration = current_time - start_time
-                notes.append(note)
-                durations.append(duration)
-                velocities.append(velocity)
-
-            # Create sequences of `sequence_length` notes (with velocity and duration)
+            # Ensure we have enough notes to form sequences
             if len(notes) < sequence_length + 1:
                 continue
 
             for i in range(len(notes) - sequence_length):
-                # Stack notes, velocities, and durations into one sequence
-                sequence = list(zip(notes[i:i + sequence_length],
-                                    velocities[i:i + sequence_length],
-                                    durations[i:i + sequence_length]))
+                sequence = notes[i:i + sequence_length]
                 sequences.append(sequence)
-                labels.append(notes[i + sequence_length])  # The next note as label
+                labels.append(notes[i + sequence_length])  # Next note as the label
 
-    # Convert to NumPy arrays and normalize features
+    # Convert to NumPy arrays
     sequences = np.array(sequences)
     labels = np.array(labels)
 
-    # Normalize the input features
-    sequences[:, :, 0] = sequences[:, :, 0] / 127.0  # Normalize notes (0-127) to [0, 1]
-    sequences[:, :, 1] = sequences[:, :, 1] / 127.0  # Normalize velocity (0-127) to [0, 1]
-    sequences[:, :, 2] = sequences[:, :, 2] / np.max(sequences[:, :, 2])  # Normalize durations
+    # One-hot encode the sequences and labels
+    sequences = to_categorical(sequences, num_classes=num_notes)  # Shape: (num_samples, sequence_length, 128)
+    labels = to_categorical(labels, num_classes=num_notes)  # Shape: (num_samples, 128)
 
-    # Reshape input to (num_samples, sequence_length, 3) for CNN input
-    return sequences.reshape(-1, sequence_length, 3), labels.reshape(-1, 1)
+    return sequences, labels
+
 
 
 
