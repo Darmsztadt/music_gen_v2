@@ -181,24 +181,80 @@ def create_training_data(files, sequence_length=32):
 
     for file in files:
         for track in file.values():
-            notes = [msg.note for msg in track if msg.type == 'note_on']
+            notes = []
+            durations = []  # To store duration of each note
+            velocities = []  # To store velocity for each note
+
+            current_time = 0  # Initial time reference for delta_time
+            active_notes = {}  # Store active notes (for calculating durations)
+
+            # Collect notes, velocities, and durations
+            for msg in track:
+                if msg.type == 'note_on':
+                    note = msg.note
+                    velocity = msg.velocity
+                    delta_time = msg.time
+
+                    # Store the time when the note starts
+                    if note not in active_notes:
+                        active_notes[note] = (current_time, velocity)
+
+                    current_time += delta_time
+
+                elif msg.type == 'note_off':
+                    note = msg.note
+                    delta_time = msg.time
+
+                    # If note is already active, calculate its duration and add to lists
+                    if note in active_notes:
+                        note_start_time, velocity = active_notes.pop(note)
+                        duration = current_time - note_start_time
+                        notes.append(note)
+                        durations.append(duration)
+                        velocities.append(velocity)
+
+                    current_time += delta_time  # Update the reference time for delta_time
+
+            # Handle the case where notes are still active at the end of the track
+            for note, (start_time, velocity) in active_notes.items():
+                # These notes did not have 'note_off', you can decide what to do here
+                duration = current_time - start_time
+                notes.append(note)
+                durations.append(duration)
+                velocities.append(velocity)
+
+            # Create sequences of `sequence_length` notes (with velocity and duration)
             if len(notes) < sequence_length + 1:
                 continue
 
             for i in range(len(notes) - sequence_length):
-                sequences.append(notes[i:i + sequence_length])
-                labels.append(notes[i + sequence_length])
+                # Stack notes, velocities, and durations into one sequence
+                sequence = list(zip(notes[i:i + sequence_length],
+                                    velocities[i:i + sequence_length],
+                                    durations[i:i + sequence_length]))
+                sequences.append(sequence)
+                labels.append(notes[i + sequence_length])  # The next note as label
 
-    sequences = np.array(sequences) / 127.0  # Normalize
-    labels = np.array(labels) / 127.0  # Normalize
+    # Convert to NumPy arrays and normalize features
+    sequences = np.array(sequences)
+    labels = np.array(labels)
 
-    return sequences.reshape(-1, sequence_length, 1), labels.reshape(-1, 1)
+    # Normalize the input features
+    sequences[:, :, 0] = sequences[:, :, 0] / 127.0  # Normalize notes (0-127) to [0, 1]
+    sequences[:, :, 1] = sequences[:, :, 1] / 127.0  # Normalize velocity (0-127) to [0, 1]
+    sequences[:, :, 2] = sequences[:, :, 2] / np.max(sequences[:, :, 2])  # Normalize durations
+
+    # Reshape input to (num_samples, sequence_length, 3) for CNN input
+    return sequences.reshape(-1, sequence_length, 3), labels.reshape(-1, 1)
+
+
 
 
 if __name__ == '__main__':
-    midis = load_midi_from_folder('dataset/Q1')
+    subset = 'Q1'
+    midis = load_midi_from_folder(f'dataset/{subset}')
     sequences, labels = create_training_data(midis, 32)
     model = build_cnn_model(sequences.shape[1:])
     train_model(model, sequences, labels)
-    model.save()
+    model.save(f'model{subset}.keras')
 
