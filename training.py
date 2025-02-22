@@ -177,37 +177,60 @@ def load_midi_from_folder(folder_path):
 
 from tensorflow.keras.utils import to_categorical
 
-def create_training_data(files, sequence_length=32, num_notes=128):
-    sequences = []
-    labels = []
 
-    for file in files:
-        for track in file.values():
-            notes = []
+def create_training_data_generator(folder_path, sequence_length=32, batch_size=64):
+    """
+    Generator function to create training data from MIDI files with one-hot encoding.
 
-            # Collect only note pitches
-            for msg in track:
-                if msg.type == 'note_on' and msg.velocity > 0:  # Ignore note_off events
-                    notes.append(msg.note)
+    Parameters:
+        folder_path (str): Path to the folder containing MIDI files.
+        sequence_length (int): Number of previous notes used to predict the next note.
+        batch_size (int): Number of sequences per batch.
 
-            # Ensure we have enough notes to form sequences
-            if len(notes) < sequence_length + 1:
-                continue
+    Yields:
+        tuple: (batch_sequences, batch_labels) where sequences are one-hot encoded.
+    """
+    all_files = [os.path.join(folder_path, f) for f in os.listdir(folder_path) if
+                 f.endswith('.mid') or f.endswith('.midi')]
 
-            for i in range(len(notes) - sequence_length):
-                sequence = notes[i:i + sequence_length]
-                sequences.append(sequence)
-                labels.append(notes[i + sequence_length])  # Next note as the label
+    # MIDI note range is 0-127, so we use 128 for one-hot encoding
+    num_notes = 128
 
-    # Convert to NumPy arrays
-    sequences = np.array(sequences)
-    labels = np.array(labels)
+    while True:  # Infinite loop for generator
+        np.random.shuffle(all_files)  # Shuffle files for randomness
+        sequences = []
+        labels = []
 
-    # One-hot encode the sequences and labels
-    sequences = to_categorical(sequences, num_classes=num_notes)  # Shape: (num_samples, sequence_length, 128)
-    labels = to_categorical(labels, num_classes=num_notes)  # Shape: (num_samples, 128)
+        for file_path in all_files:
+            midi = MidiFile(file_path)
+            for track in midi.tracks:
+                notes = []
 
-    return sequences, labels
+                for msg in track:
+                    if msg.type == 'note_on':  # Only take note_on messages
+                        notes.append(msg.note)
+
+                if len(notes) < sequence_length + 1:
+                    continue  # Skip short tracks
+
+                # Convert notes to one-hot encoding
+                for i in range(len(notes) - sequence_length):
+                    seq = notes[i:i + sequence_length]  # Input sequence
+                    label = notes[i + sequence_length]  # Next note (label)
+
+                    # Convert to one-hot
+                    seq_one_hot = np.zeros((sequence_length, num_notes))
+                    for j, note in enumerate(seq):
+                        seq_one_hot[j, note] = 1  # Set one-hot for each note
+
+                    sequences.append(seq_one_hot)
+                    labels.append(label)  # Store label as an integer (not one-hot)
+
+                    # Yield batch when batch size is reached
+                    if len(sequences) >= batch_size:
+                        yield np.array(sequences), np.array(labels)
+                        sequences = []
+                        labels = []
 
 
 
