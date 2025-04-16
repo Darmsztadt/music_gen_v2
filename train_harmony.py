@@ -74,5 +74,5 @@ midi_root_dir = 'dataset/'  # Replace with actual folder path
 
 for dataset in ['Q1','Q2','Q3','Q4']:
     generator = midi_to_sequences(midi_root_dir+dataset)
-    model.fit(generator, epochs=5, steps_per_epoch=5000, batch_size=32)
-    model.save(f'harmony_{dataset}.keras')
+    model.fit(generator, epochs=10, steps_per_epoch=10000, batch_size=32)
+    model.save(f'harmony_{dataset}_10x10000x32.keras')
