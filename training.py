@@ -93,7 +93,7 @@ def create_training_data_generator(folder_path, sequence_length=32, prediction_l
 
 
 if __name__ == '__main__':
-    for subset in ['Q2','Q3','Q4']:
+    for subset in ['Q1','Q2','Q3','Q4']:
         generator = create_training_data_generator(f'dataset/{subset}')
         first_batch = next(generator)  # Fetch first batch to determine shape
         model = build_cnn_model(first_batch[0].shape[1:], first_batch[1].shape[1:])  # Use correct input/output shape
