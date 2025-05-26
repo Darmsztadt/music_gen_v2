@@ -7,26 +7,24 @@ from tensorflow.keras import layers
 import os
 
 
-def build_cnn_model(input_shape, output_shape):
+def build_lstm_model(input_shape, output_shape):
     """
-    Builds a convolutional neural network model using Keras.
+    Builds an LSTM model using Keras.
 
     Parameters:
-        input_shape (tuple): Shape of the input data.
-        output_shape (tuple): Shape of the output labels.
+        input_shape (tuple): Shape of the input data (e.g., (sequence_length, 128)).
+        output_shape (tuple): Shape of the output labels (e.g., (8, 128)).
 
     Returns:
-        keras.Model: Compiled CNN model.
+        keras.Model: Compiled LSTM model.
     """
     model = keras.Sequential([
-        layers.Conv1D(32, kernel_size=3, activation='relu', input_shape=input_shape),
-        layers.MaxPooling1D(pool_size=2),
-        layers.Conv1D(64, kernel_size=3, activation='relu'),
-        layers.MaxPooling1D(pool_size=2),
-        layers.Flatten(),
-        layers.Dense(128, activation='relu'),
-        layers.Dense(np.prod(output_shape), activation='softmax'),  # Output (8 * 128 classes)
-        layers.Reshape(output_shape)  # Reshape to (8, 128)
+        layers.Input(shape=input_shape),
+        layers.LSTM(256, return_sequences=True),
+        layers.LSTM(256),
+        layers.Dense(512, activation='relu'),
+        layers.Dense(np.prod(output_shape), activation='softmax'),
+        layers.Reshape(output_shape)
     ])
 
     model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
@@ -70,18 +68,18 @@ def create_training_data_generator(folder_path, sequence_length=32, prediction_l
                     continue  # Skip short tracks
 
                 for i in range(len(notes) - sequence_length - prediction_length):
-                    seq = notes[i:i + sequence_length]  # Input sequence
-                    label = notes[i + sequence_length:i + sequence_length + prediction_length]  # Next 8 notes
+                    seq = notes[i:i + sequence_length]
+                    label = notes[i + sequence_length:i + sequence_length + prediction_length]
 
                     # Convert input to one-hot
                     seq_one_hot = np.zeros((sequence_length, num_notes))
                     for j, note in enumerate(seq):
-                        seq_one_hot[j, note] = 1  # One-hot encode each note
+                        seq_one_hot[j, note] = 1
 
-                    # Convert labels to one-hot (shape: (8, 128))
+                    # Convert labels to one-hot
                     label_one_hot = np.zeros((prediction_length, num_notes))
                     for j, note in enumerate(label):
-                        label_one_hot[j, note] = 1  # One-hot encode each note
+                        label_one_hot[j, note] = 1
 
                     sequences.append(seq_one_hot)
                     labels.append(label_one_hot)
@@ -93,9 +91,16 @@ def create_training_data_generator(folder_path, sequence_length=32, prediction_l
 
 
 if __name__ == '__main__':
-    for subset in ['Q2','Q3','Q4']:
+    np.random.seed(42)
+    tf.random.set_seed(42)
+
+    for subset in ['Q2', 'Q3', 'Q4']:
         generator = create_training_data_generator(f'dataset/{subset}')
-        first_batch = next(generator)  # Fetch first batch to determine shape
-        model = build_cnn_model(first_batch[0].shape[1:], first_batch[1].shape[1:])  # Use correct input/output shape
-        model.fit(generator, steps_per_epoch=200000, epochs=5)  # Train using generator
+        first_batch = next(generator)
+
+        input_shape = first_batch[0].shape[1:]  # (sequence_length, 128)
+        output_shape = first_batch[1].shape[1:]  # (8, 128)
+
+        model = build_lstm_model(input_shape, output_shape)
+        model.fit(generator, steps_per_epoch=100000, epochs=5)
         model.save(f'model_{subset}.keras')
