@@ -9,8 +9,6 @@ import random
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 from midi2audio import FluidSynth
-from pydub import AudioSegment
-import threading
 
 
 # --- Core Functions ---
@@ -28,7 +26,7 @@ def generate_base_melody(base_model, sequence_length=32, total_length=64, num_no
     seed_notes = np.random.randint(0, num_notes, size=sequence_length)
     generated_notes = list(seed_notes)
 
-    while len(generated_notes) < total_length:
+    while len(generated_notes) < total_length+sequence_length:
         current_input = np.zeros((1, sequence_length, num_notes))
         input_notes = []
         for i in range(sequence_length):
@@ -42,9 +40,12 @@ def generate_base_melody(base_model, sequence_length=32, total_length=64, num_no
 
         predicted = base_model.predict(current_input, verbose=0)
         predicted_notes = np.argmax(predicted[0], axis=-1)
+        print(f'Predicted notes: {predicted_notes}')
 
         remaining = total_length - len(generated_notes)
         generated_notes.extend(predicted_notes[:remaining].tolist())
+        print(f'Generated{np.shape(generated_notes)}')
+        print(np.array(generated_notes[sequence_length:total_length]))
 
     return np.array(generated_notes[sequence_length:total_length])
 
@@ -147,6 +148,8 @@ def generate_midi(models, output_path, sequence_length=32, total_length=64, num_
     parametric_model = models['parametric']
 
     melody_notes = generate_base_melody(base_model, sequence_length, total_length, num_notes)
+    print('Melody: ')
+    print(np.shape(melody_notes))
     harmony_notes = generate_harmonies(harmony_model, melody_notes, num_notes, chunk_size=64, progress=progress)
     avg_length, avg_velocity = predict_parameters(
         parametric_model=parametric_model,
@@ -192,14 +195,14 @@ def generate_midi(models, output_path, sequence_length=32, total_length=64, num_
 class MidiGeneratorApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("🎹 Multi-Track MIDI Generator")
+        self.root.title("🎹 MusicGen v2")
         self.model_folder = ''
         self.output_folder = ''
         self.selected_subset = tk.StringVar(value="Q1")
         self.last_output_path = None
-        self.mp3_output_path = None
+        self.wav_output_path = None
         self.soundfont_path = "GeneralUser-GS.sf2"
-        self.selected_mp3_path = None
+        self.selected_wav_path = None
 
         # Initialize MIDI
         self.setup_midi()
@@ -238,15 +241,15 @@ class MidiGeneratorApp:
         self.selected_sf_label = tk.Label(root, text="SoundFont: default (soundfont.sf2)", fg="gray")
         self.selected_sf_label.pack()
 
-        tk.Button(root, text="Select MP3 Output Path", command=self.select_mp3_path, width=30).pack(pady=2)
-        tk.Button(root, text="Convert MIDI to MP3", command=self.convert_midi_to_mp3, bg='orange', fg='black',
+        tk.Button(root, text="Select wav Output Path", command=self.select_wav_path, width=30).pack(pady=2)
+        tk.Button(root, text="Convert MIDI to wav", command=self.convert_midi_to_wav, bg='orange', fg='black',
                   width=30).pack(pady=5)
-        tk.Button(root, text="Select MP3 File", command=self.select_existing_mp3, bg='purple', fg='white',
+        tk.Button(root, text="Select wav File", command=self.select_existing_wav, bg='purple', fg='white',
                   width=30).pack(pady=2)
-        self.selected_mp3_label = tk.Label(root, text="Selected MP3: None", fg="gray")
-        self.selected_mp3_label.pack()
+        self.selected_wav_label = tk.Label(root, text="Selected wav: None", fg="gray")
+        self.selected_wav_label.pack()
 
-        tk.Button(root, text="Preview Selected MP3", command=self.preview_midi, bg='blue', fg='white', width=30).pack(
+        tk.Button(root, text="Preview Selected wav", command=self.preview_midi, bg='blue', fg='white', width=30).pack(
             pady=5)
 
     def setup_midi(self):
@@ -275,17 +278,17 @@ class MidiGeneratorApp:
             self.selected_midi_label.config(text=f"Selected MIDI: {os.path.basename(midi_file)}", fg="black")
 
     def preview_midi(self):
-        if not self.selected_mp3_path:
-            messagebox.showwarning("Warning", "No MP3 file selected to preview.")
+        if not self.selected_wav_path:
+            messagebox.showwarning("Warning", "No wav file selected to preview.")
             return
 
         try:
             mixer.init()
-            mixer.music.load(self.selected_mp3_path)
+            mixer.music.load(self.selected_wav_path)
             mixer.music.play()
             mixer.quit()
         except Exception as e:
-            messagebox.showerror("Error", f"Could not play MP3: {e}")
+            messagebox.showerror("Error", f"Could not play wav: {e}")
 
     def generate(self):
         if not self.model_folder or not self.output_folder:
@@ -313,21 +316,21 @@ class MidiGeneratorApp:
         messagebox.showinfo("Success",
                             f"MIDI generated!\nSaved at: {output_path}\nTempo: {tempo} bpm\n")
 
-    def select_mp3_path(self):
+    def select_wav_path(self):
         file_path = filedialog.asksaveasfilename(
-            defaultextension=".mp3",
-            filetypes=[("MP3 files", "*.mp3")],
-            title="Select MP3 Output Path"
+            defaultextension=".wav",
+            filetypes=[("wav files", "*.wav")],
+            title="Select wav Output Path"
         )
         if file_path:
-            self.mp3_output_path = file_path
-            messagebox.showinfo("MP3 Path", f"MP3 will be saved to:\n{file_path}")
+            self.wav_output_path = file_path
+            messagebox.showinfo("wav Path", f"wav will be saved to:\n{file_path}")
 
-    def convert_midi_to_mp3(self):
+    def convert_midi_to_wav(self):
         try:
             fs = FluidSynth(self.soundfont_path)
-            fs.midi_to_audio(self.last_output_path, self.mp3_output_path)
-            messagebox.showinfo("Success", f"WAV saved at:\n{self.mp3_output_path}")
+            fs.midi_to_audio(self.last_output_path, self.wav_output_path)
+            messagebox.showinfo("Success", f"WAV saved at:\n{self.wav_output_path}")
         except Exception as e:
             messagebox.showerror("Conversion Error", str(e))
 
@@ -340,11 +343,11 @@ class MidiGeneratorApp:
             self.soundfont_path = sf2_path
             self.selected_sf_label.config(text=f"SoundFont: {os.path.basename(sf2_path)}", fg="black")
 
-    def select_existing_mp3(self):
-        mp3_file = filedialog.askopenfilename(title="Select MP3 File", filetypes=[("MP3 Files", "*.mp3")])
-        if mp3_file:
-            self.selected_mp3_path = mp3_file
-            self.selected_mp3_label.config(text=f"Selected MP3: {os.path.basename(mp3_file)}", fg="black")
+    def select_existing_wav(self):
+        wav_file = filedialog.askopenfilename(title="Select wav File", filetypes=[("wav Files", "*.wav")])
+        if wav_file:
+            self.selected_wav_path = wav_file
+            self.selected_wav_label.config(text=f"Selected wav: {os.path.basename(wav_file)}", fg="black")
 
 
 # --- MAIN ---
