@@ -283,7 +283,6 @@ class MidiGeneratorApp:
             mixer.init()
             mixer.music.load(self.selected_mp3_path)
             mixer.music.play()
-            mixer.quit()
         except Exception as e:
             messagebox.showerror("Error", f"Could not play MP3: {e}")
 
